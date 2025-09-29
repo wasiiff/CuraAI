@@ -1,42 +1,65 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
-import { EyeIcon, EyeSlashIcon, LockClosedIcon, EnvelopeIcon, UserIcon } from '@heroicons/react/24/outline';
+import {
+  EyeIcon,
+  EyeSlashIcon,
+  LockClosedIcon,
+  EnvelopeIcon,
+  UserIcon,
+} from '@heroicons/react/24/outline';
 import Link from 'next/link';
 
+type SignupFormInputs = {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+};
+
 export default function SignupPage() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<SignupFormInputs>();
 
-    // ✅ Password match check
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      router.push('/products');
     }
+  }, [router]);
 
+  const onSubmit = async (data: SignupFormInputs) => {
+    setError('');
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/signup`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: data.name,
+            email: data.email,
+            password: data.password,
+          }),
+        }
+      );
 
       if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('token', data.access_token);
+        const result = await response.json();
+        localStorage.setItem('token', result.access_token);
         router.push('/products');
       } else {
         const errorData = await response.json();
@@ -57,16 +80,21 @@ export default function SignupPage() {
           <div className="mx-auto h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
             <LockClosedIcon className="h-8 w-8 text-white" />
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Create your account</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">
+            Create your account
+          </h2>
           <p className="text-gray-600">Sign up to get started</p>
         </div>
 
         {/* Form */}
         <div className="bg-white rounded-xl shadow-lg p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Name Field */}
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Full Name
               </label>
               <div className="relative">
@@ -76,18 +104,24 @@ export default function SignupPage() {
                 <input
                   id="name"
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
+                  {...register('name', { required: 'Name is required' })}
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
                   placeholder="Enter your full name"
                 />
               </div>
+              {errors.name && (
+                <p className="text-sm text-red-600 mt-1">
+                  {errors.name.message}
+                </p>
+              )}
             </div>
 
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Email address
               </label>
               <div className="relative">
@@ -97,18 +131,24 @@ export default function SignupPage() {
                 <input
                   id="email"
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                  {...register('email', { required: 'Email is required' })}
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
                   placeholder="Enter your email"
                 />
               </div>
+              {errors.email && (
+                <p className="text-sm text-red-600 mt-1">
+                  {errors.email.message}
+                </p>
+              )}
             </div>
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Password
               </label>
               <div className="relative">
@@ -118,9 +158,13 @@ export default function SignupPage() {
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
+                  {...register('password', {
+                    required: 'Password is required',
+                    minLength: {
+                      value: 6,
+                      message: 'Password must be at least 6 characters',
+                    },
+                  })}
                   className="block w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
                   placeholder="Create a password"
                 />
@@ -136,11 +180,19 @@ export default function SignupPage() {
                   )}
                 </button>
               </div>
+              {errors.password && (
+                <p className="text-sm text-red-600 mt-1">
+                  {errors.password.message}
+                </p>
+              )}
             </div>
 
             {/* Confirm Password Field */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Confirm Password
               </label>
               <div className="relative">
@@ -150,9 +202,11 @@ export default function SignupPage() {
                 <input
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
+                  {...register('confirmPassword', {
+                    required: 'Please confirm your password',
+                    validate: (val) =>
+                      val === watch('password') || 'Passwords do not match',
+                  })}
                   className="block w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
                   placeholder="Re-enter your password"
                 />
@@ -168,6 +222,11 @@ export default function SignupPage() {
                   )}
                 </button>
               </div>
+              {errors.confirmPassword && (
+                <p className="text-sm text-red-600 mt-1">
+                  {errors.confirmPassword.message}
+                </p>
+              )}
             </div>
 
             {/* Error Message */}
@@ -197,7 +256,10 @@ export default function SignupPage() {
             <div className="text-center">
               <p className="text-gray-600 text-sm">
                 Already have an account?{' '}
-                <Link href="/login" className="text-blue-600 hover:text-blue-700 font-medium">
+                <Link
+                  href="/login"
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
                   Sign in here
                 </Link>
               </p>

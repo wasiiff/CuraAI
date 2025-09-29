@@ -1,37 +1,63 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
-import { EyeIcon, EyeSlashIcon, LockClosedIcon, EnvelopeIcon } from '@heroicons/react/24/outline';
+import {
+  EyeIcon,
+  EyeSlashIcon,
+  LockClosedIcon,
+  EnvelopeIcon,
+} from '@heroicons/react/24/outline';
 import Link from 'next/link';
 
+type LoginFormInputs = {
+  email: string;
+  password: string;
+};
+
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormInputs>();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      router.push('/products');
+    }
+  }, [router]);
+
+  const onSubmit = async (data: LoginFormInputs) => {
     setIsLoading(true);
     setError('');
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/login`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        }
+      );
 
       if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('token', data.access_token);
-        console.log('Login successful, token stored.',data.access_token);
+        const result = await response.json();
+        localStorage.setItem('token', result.access_token);
+        console.log('Login successful, token stored.', result.access_token);
         router.push('/products');
       } else {
         const errorData = await response.json();
-        setError(errorData.message || 'Login failed. Please check your credentials.');
+        setError(
+          errorData.message || 'Login failed. Please check your credentials.'
+        );
       }
     } catch (err) {
       setError(`Network error. Please try again later. ${err}`);
@@ -54,10 +80,13 @@ export default function LoginPage() {
 
         {/* Form */}
         <div className="bg-white rounded-xl shadow-lg p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Email address
               </label>
               <div className="relative">
@@ -67,18 +96,24 @@ export default function LoginPage() {
                 <input
                   id="email"
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                  {...register('email', { required: 'Email is required' })}
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
                   placeholder="Enter your email"
                 />
               </div>
+              {errors.email && (
+                <p className="text-sm text-red-600 mt-1">
+                  {errors.email.message}
+                </p>
+              )}
             </div>
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Password
               </label>
               <div className="relative">
@@ -88,9 +123,13 @@ export default function LoginPage() {
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
+                  {...register('password', {
+                    required: 'Password is required',
+                    minLength: {
+                      value: 6,
+                      message: 'Password must be at least 6 characters',
+                    },
+                  })}
                   className="block w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
                   placeholder="Enter your password"
                 />
@@ -106,6 +145,11 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
+              {errors.password && (
+                <p className="text-sm text-red-600 mt-1">
+                  {errors.password.message}
+                </p>
+              )}
             </div>
 
             {/* Error Message */}
@@ -135,7 +179,10 @@ export default function LoginPage() {
             <div className="text-center">
               <p className="text-gray-600 text-sm">
                 Don&apos;t have an account?&nbsp;
-                <Link href="/signup" className="text-blue-600 hover:text-blue-700 font-medium">
+                <Link
+                  href="/signup"
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
                   Sign up here
                 </Link>
               </p>

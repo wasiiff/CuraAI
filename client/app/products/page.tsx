@@ -9,6 +9,7 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import ProductSkeleton from '../components/ProductSkeleton';
+import { useRouter } from 'next/router';
 
 type Product = {
   _id: string;
@@ -25,9 +26,9 @@ export default function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchType, setSearchType] = useState<'all' | 'title' | 'ai'>('all');
 
-  // pagination state
+
   const [page, setPage] = useState(1);
-  const [limit] = useState(20); // items per page
+  const [limit] = useState(20);
   const [total, setTotal] = useState(0);
 
   const fetchProducts = async (
@@ -96,6 +97,14 @@ export default function ProductsPage() {
   useEffect(() => {
     fetchProducts(1);
   }, []);
+    const router = useRouter();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+    }
+  }, [router]);
 
   const handleTitleSearch = async (title: string): Promise<boolean> => {
     const result = await fetchProducts(1, title, 'title');
