@@ -1,15 +1,15 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-'use client';
-import { useEffect, useState } from 'react';
-import ProductCard from '../components/ProductCard';
-import SearchBar from '../components/SearchBar';
-import ChatBot from '../components/ChatBot';
+"use client";
+import { useEffect, useState } from "react";
+import ProductCard from "../components/ProductCard";
+import SearchBar from "../components/SearchBar";
+import ChatBot from "../components/ChatBot";
 import {
   ShoppingBagIcon,
   ExclamationTriangleIcon,
-} from '@heroicons/react/24/outline';
-import ProductSkeleton from '../components/ProductSkeleton';
-import { useRouter } from 'next/router';
+} from "@heroicons/react/24/outline";
+import ProductSkeleton from "../components/ProductSkeleton";
+import { useRouter } from "next/navigation";
 
 type Product = {
   _id: string;
@@ -20,12 +20,19 @@ type Product = {
 };
 
 export default function ProductsPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/auth/login");
+    }
+  }, []);
   const [products, setProducts] = useState<Product[]>([]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchType, setSearchType] = useState<'all' | 'title' | 'ai'>('all');
-
+  const [searchType, setSearchType] = useState<"all" | "title" | "ai">("all");
 
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
@@ -34,39 +41,41 @@ export default function ProductsPage() {
   const fetchProducts = async (
     pageNum = 1,
     searchQuery?: string,
-    type: 'all' | 'title' | 'ai' = 'all'
+    type: "all" | "title" | "ai" = "all"
   ): Promise<{ hasResults: boolean; total: number; page: number }> => {
     setLoading(true);
     setError(null);
     setSearchType(type);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
 
       let url = `${process.env.NEXT_PUBLIC_API_URL}/products?page=${pageNum}&limit=${limit}`;
-      if (type === 'title' && searchQuery) {
-        url = `${process.env.NEXT_PUBLIC_API_URL}/products?title=${encodeURIComponent(
+      if (type === "title" && searchQuery) {
+        url = `${
+          process.env.NEXT_PUBLIC_API_URL
+        }/products?title=${encodeURIComponent(
           searchQuery
         )}&page=${pageNum}&limit=${limit}`;
-      } else if (type === 'ai' && searchQuery) {
-        url = `${process.env.NEXT_PUBLIC_API_URL}/products/ai-search?q=${encodeURIComponent(
-          searchQuery
-        )}`;
+      } else if (type === "ai" && searchQuery) {
+        url = `${
+          process.env.NEXT_PUBLIC_API_URL
+        }/products/ai-search?q=${encodeURIComponent(searchQuery)}`;
       }
 
       const response = await fetch(url, {
         headers: {
-          Authorization: token ? `Bearer ${token}` : '',
+          Authorization: token ? `Bearer ${token}` : "",
         },
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch products');
+        throw new Error("Failed to fetch products");
       }
 
       const data = await response.json();
 
-      if (type === 'ai') {
+      if (type === "ai") {
         setProducts(data.products || []);
         setTotal(data.products?.length || 0);
         setPage(1);
@@ -86,7 +95,7 @@ export default function ProductsPage() {
         };
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : "An error occurred");
       setProducts([]);
       return { hasResults: false, total: 0, page: 1 };
     } finally {
@@ -97,34 +106,26 @@ export default function ProductsPage() {
   useEffect(() => {
     fetchProducts(1);
   }, []);
-    const router = useRouter();
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-    }
-  }, [router]);
 
   const handleTitleSearch = async (title: string): Promise<boolean> => {
-    const result = await fetchProducts(1, title, 'title');
+    const result = await fetchProducts(1, title, "title");
     return result.hasResults;
   };
 
   const handleAISearch = async (q: string) => {
-    await fetchProducts(1, q, 'ai');
+    await fetchProducts(1, q, "ai");
   };
 
   const handleClearFilters = async () => {
-    setQuery('');
+    setQuery("");
     await fetchProducts(1); // reset to "all"
   };
 
   const getResultsText = () => {
     const count = products.length;
-    if (searchType === 'all') return `${count} Products`;
-    if (searchType === 'title') return `${count} Results from Title Search`;
-    if (searchType === 'ai') return `${count} AI-Recommended Products`;
+    if (searchType === "all") return `${count} Products`;
+    if (searchType === "title") return `${count} Results from Title Search`;
+    if (searchType === "ai") return `${count} AI-Recommended Products`;
     return `${count} Products`;
   };
 
@@ -153,17 +154,18 @@ export default function ProductsPage() {
                 View All Products
               </button>
 
-              {typeof window !== 'undefined' && localStorage.getItem('token') && (
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('token');
-                    window.location.href = '/auth/login';
-                  }}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                >
-                  Logout
-                </button>
-              )}
+              {typeof window !== "undefined" &&
+                localStorage.getItem("token") && (
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem("token");
+                      window.location.href = "/auth/login";
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                  >
+                    Logout
+                  </button>
+                )}
             </div>
           </div>
         </div>
@@ -186,7 +188,7 @@ export default function ProductsPage() {
           <h2 className="text-lg font-semibold text-gray-900">
             {getResultsText()}
           </h2>
-          {searchType !== 'all' && (
+          {searchType !== "all" && (
             <button
               onClick={handleClearFilters}
               className="text-sm text-gray-600 hover:text-gray-800 underline"
@@ -214,13 +216,13 @@ export default function ProductsPage() {
         )}
 
         {/* Loading State */}
-       {loading && (
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-    {Array.from({ length: 20 }).map((_, i) => (
-      <ProductSkeleton key={i} />
-    ))}
-  </div>
-)}
+        {loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <ProductSkeleton key={i} />
+            ))}
+          </div>
+        )}
 
         {/* Products Grid */}
         {!loading && !error && (
@@ -250,7 +252,7 @@ export default function ProductsPage() {
                 </div>
 
                 {/* Pagination Controls */}
-                {searchType !== 'ai' && totalPages > 1 && (
+                {searchType !== "ai" && totalPages > 1 && (
                   <div className="flex justify-center mt-8 gap-2">
                     <button
                       onClick={() => fetchProducts(page - 1, query, searchType)}
