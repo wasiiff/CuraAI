@@ -35,10 +35,23 @@ export class ProductsController {
     return this.productsService.findAll(pageNum, limitNum);
   }
 
-  // AI intent-based search. Returns product suggestions based on intent.
   @Get('ai-search')
   async aiSearch(@Query('q') q: string) {
-    const prompt = `User query: "${q}". Extract concise intent as comma-separated keywords (e.g., "calcium, vitamin D, joint"). Only output keywords.`;
+    const prompt = `
+    Pre Task Instructions:
+    Normalize the text if it has any typos or grammatical errors.
+    
+    You are an intent extraction engine for a healthcare product search system.
+
+User query: "${q}"
+Task Context:
+Extract exact concise intent as comma-separated keywords (e.g., "calcium, vitamin D, joint"). like if a user entered joints Health issues then intent should be exact as supplements for joints, not for health.
+Task:
+- Identify the user's exact intent and extract the most relevant keywords.
+- Keywords should strictly match product-related attributes such as ingredients (e.g., "calcium", "vitamin D"), health goals (e.g., "joint support", "immune boost"), or product type (e.g., "protein powder", "multivitamin").
+- Do not add unrelated words or explanations.
+- Return keywords only, in a simple comma-separated list (no sentences, no extra text).
+- Only output keywords.`;
     const response = await this.gemini.ask(prompt);
 
     const keywordsStr = response.replace(/\n/g, ' ').trim();
@@ -54,20 +67,19 @@ export class ProductsController {
       { description: { $regex: k, $options: 'i' } },
     ]);
 
-    const products = await this.productsService.findByFilter({ $or: orFilters });
+    const products = await this.productsService.findByFilter({
+      $or: orFilters,
+    });
     return { keywords, products, rawIntent: response };
   }
-
-  // Chatbot endpoint. Recommends products from inventory.
   @Post('chat')
   async chat(@Body() body: { q: string }) {
     const q = body.q || '';
 
-    // ✅ fetch inventory with limit = 100
     const allProducts = await this.productsService.findAll(1, 100);
     const productsArray = Array.isArray(allProducts)
       ? allProducts
-      : allProducts.items; // unwrap pagination
+      : allProducts.items;
 
     const productSummaries = productsArray
       .map(
@@ -89,7 +101,11 @@ Product Schema:
 }
 `;
 
-    const prompt = `You are a healthcare supplement recommendation assistant.
+    const prompt = `
+    Pre Task Instructions:
+    Normalize the text if it has any typos or grammatical errors.
+
+    You are a healthcare supplement recommendation assistant.
 
 User query: "${q}"
 
@@ -117,8 +133,10 @@ Output format (strict JSON, no markdown fences):
 
     const gresp = await this.gemini.ask(prompt);
 
-    // ✅ sanitize markdown if AI adds code fences
-    const cleaned = gresp.replace(/```json/gi, '').replace(/```/g, '').trim();
+    const cleaned = gresp
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
 
     try {
       const parsed = JSON.parse(cleaned);

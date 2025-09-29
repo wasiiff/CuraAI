@@ -20,7 +20,6 @@ export class ProductsService {
 
 
   async searchByText(q: string) {
-    // basic text-search across name and description
     return this.productModel.find({
       $or: [
         { name: { $regex: q, $options: 'i' } },

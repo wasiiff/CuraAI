@@ -27,10 +27,8 @@ export class GeminiService {
     try {
       const model = this.client.getGenerativeModel({ model: this.model });
 
-      // ✅ FIX: pass prompt directly as a string
       const result: GenerateContentResult = await model.generateContent(prompt);
 
-      // ✅ Handle output consistently
       if (result.response && typeof result.response.text === 'function') {
         return result.response.text();
       }
