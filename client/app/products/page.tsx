@@ -28,6 +28,7 @@ export default function ProductsPage() {
       router.push("/auth/login");
     }
   }, []);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -76,6 +77,7 @@ export default function ProductsPage() {
       const data = await response.json();
 
       if (type === "ai") {
+        // ✅ AI results already in products
         setProducts(data.products || []);
         setTotal(data.products?.length || 0);
         setPage(1);
@@ -251,7 +253,7 @@ export default function ProductsPage() {
                   ))}
                 </div>
 
-                {/* Pagination Controls */}
+                {/* Pagination */}
                 {searchType !== "ai" && totalPages > 1 && (
                   <div className="flex justify-center mt-8 gap-2">
                     <button

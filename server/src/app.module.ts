@@ -5,6 +5,7 @@ import { ProductsModule } from './products/products.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { GeminiService } from './gemini/gemini.service';
+import { SpeechModule } from './speech/speech.module';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -13,7 +14,8 @@ dotenv.config();
     MongooseModule.forRoot(process.env.MONGODB_URI!),
     ProductsModule,
     UsersModule,
-    AuthModule
+    AuthModule,
+    SpeechModule
   ],
   providers: [GeminiService]
 })
