@@ -1,11 +1,11 @@
 /* eslint-disable prettier/prettier */
-import { Controller, Get, Query, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Post, Body, UseGuards, Param } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { AuthGuard } from '@nestjs/passport';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private productsService: ProductsService) {}
+  constructor(private productsService: ProductsService) { }
 
   @UseGuards(AuthGuard('jwt'))
   @Get()
@@ -31,6 +31,8 @@ export class ProductsController {
     return this.productsService.findAll(pageNum, limitNum);
   }
 
+
+
   @Get('ai-search')
   async aiSearch(@Query('q') q: string) {
     return this.productsService.aiSearch(q);
@@ -40,5 +42,19 @@ export class ProductsController {
   async chat(@Body() body: { q: string }) {
     const q = body.q || '';
     return this.productsService.chat(q);
+  }
+
+  @Post('symptom-checker')
+  async symptomChecker(@Body() body: { symptoms: string }) {
+    const text = body.symptoms || '';
+    return this.productsService.symptomChecker(text);
+  }
+  @Get(':id')
+  async getById(@Param('id') id: string) {
+    const product = await this.productsService.findById(id);
+    if (!product) {
+      return { message: 'Product not found', statusCode: 404 };
+    }
+    return product;
   }
 }

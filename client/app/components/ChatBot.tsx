@@ -69,19 +69,42 @@ export default function ChatBot({ className = "" }: { className?: string }) {
     window.speechSynthesis.speak(utterance);
   };
 
+  // ✅ Updated sendChatQuery
   const sendChatQuery = async (currentQuery: string) => {
     if (!currentQuery.trim()) return;
     setIsLoading(true);
     setShowSuggestions(false);
+
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/products/chat`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ q: currentQuery }),
-        }
-      );
+      let response;
+
+      // Check if query is symptom-related
+      if (
+        currentQuery.toLowerCase().includes("i feel") ||
+        currentQuery.toLowerCase().includes("i have") ||
+        currentQuery.toLowerCase().includes("i am feeling") ||
+        currentQuery.toLowerCase().includes("my") ||
+        currentQuery.toLowerCase().includes("symptom")
+      ) {
+        response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/products/symptom-checker`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symptoms: currentQuery }),
+          }
+        );
+      } else {
+        // Default chat
+        response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/products/chat`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ q: currentQuery }),
+          }
+        );
+      }
 
       let data: any = { error: "Failed to get response. Please try again." };
       if (response.ok) {
@@ -97,18 +120,21 @@ export default function ChatBot({ className = "" }: { className?: string }) {
       };
       setMessages((prev) => [...prev, msg]);
 
-      if (data?.relevancy && data.relevancy.relevant === false) {
+      // Voice responses
+      if (data?.recommendations?.length && data?.explanation) {
         speak(
-          `Sorry, your query is not related to our products. ${
-            data.relevancy.reason || ""
-          }`
+          `${
+            data.explanation
+          }. Possible recommendations are ${data.recommendations.join(", ")}`
         );
       } else if (data?.recommendations?.length) {
         const top = data.recommendations
           .slice(0, 5)
-          .map((r: any) => r.name)
+          .map((r: any) => (typeof r === "string" ? r : r.name))
           .join(", ");
-        speak(`I found ${data.recommendations.length} products. Top: ${top}`);
+        speak(`I found ${data.recommendations.length} options. Top: ${top}`);
+      } else if (data?.explanation) {
+        speak(data.explanation);
       } else if (data?.raw) {
         speak(
           typeof data.raw === "string"
@@ -171,7 +197,6 @@ export default function ChatBot({ className = "" }: { className?: string }) {
     }
   };
 
-  // Speech recognition and recording fallback (unchanged from your code)
   const startWebSpeechRecognition = () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
@@ -281,6 +306,117 @@ export default function ChatBot({ className = "" }: { className?: string }) {
   };
 
   const formatResponse = (response: any) => {
+    if (!response) return null;
+
+    // ✅ Case 1: Symptom Checker → Nutrients + Products
+    if (response?.recommendations?.length && response?.products?.length) {
+      return (
+        <div className="space-y-5">
+          {response.explanation && (
+            <p className="text-sm text-blue-800 leading-relaxed">
+              {response.explanation}
+            </p>
+          )}
+
+          {/* Nutrient-level recommendations */}
+          <div>
+            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">
+              Suggested Nutrients
+            </p>
+            <ul className="list-disc list-inside text-slate-700 space-y-1">
+              {response.recommendations.map((rec: string, idx: number) => (
+                <li key={idx} className="font-medium">
+                  {rec}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Product matches */}
+          <div>
+            <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">
+              Matching Products
+            </p>
+            <div className="grid gap-3">
+              {response.products.map((prod: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="group bg-gradient-to-br from-white via-slate-50 to-blue-50 border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h4 className="font-bold text-blue-800 group-hover:text-blue-900">
+                      {prod.name}
+                    </h4>
+                    <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded-full">
+                      #{idx + 1}
+                    </span>
+                  </div>
+                  {prod.brand && (
+                    <p className="text-xs text-slate-500 mb-1">
+                      Brand: {prod.brand}
+                    </p>
+                  )}
+                  {prod.description && (
+                    <p className="text-sm text-slate-700 leading-relaxed line-clamp-3">
+                      {prod.description}
+                    </p>
+                  )}
+                  {prod.price && (
+                    <p className="text-sm font-semibold text-indigo-700 mt-2">
+                      Price: {prod.price}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ✅ Case 2: Products only (no recommendations)
+    if (response?.products?.length) {
+      return (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
+            {response.products.length} Product
+            {response.products.length > 1 ? "s" : ""} Found
+          </p>
+          {response.products.map((prod: any, idx: number) => (
+            <div
+              key={idx}
+              className="group bg-gradient-to-br from-white via-slate-50 to-blue-50 border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+            >
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <h4 className="font-bold text-blue-800 group-hover:text-blue-900">
+                  {prod.name}
+                </h4>
+                <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded-full">
+                  #{idx + 1}
+                </span>
+              </div>
+              {prod.brand && (
+                <p className="text-xs text-slate-500 mb-1">
+                  Brand: {prod.brand}
+                </p>
+              )}
+              {prod.description && (
+                <p className="text-sm text-slate-700 leading-relaxed line-clamp-3">
+                  {prod.description}
+                </p>
+              )}
+              {prod.price && (
+                <p className="text-sm font-semibold text-indigo-700 mt-2">
+                  Price: {prod.price}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // ✅ Case 3: Relevancy Check
     if (response?.relevancy && response.relevancy.relevant === false) {
       return (
         <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -298,11 +434,13 @@ export default function ChatBot({ className = "" }: { className?: string }) {
       );
     }
 
+    // ✅ Case 4: Generic recommendations (no products)
     if (response?.recommendations?.length) {
       return (
         <div className="space-y-3">
           <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
-            {response.recommendations.length} Products Found
+            {response.recommendations.length} Product
+            {response.recommendations.length > 1 ? "s" : ""} Found
           </p>
           {response.recommendations.map((rec: any, idx: number) => (
             <div
@@ -311,36 +449,47 @@ export default function ChatBot({ className = "" }: { className?: string }) {
             >
               <div className="flex items-start justify-between gap-2 mb-2">
                 <h4 className="font-bold text-blue-800 group-hover:text-blue-900">
-                  {rec.name}
+                  {typeof rec === "string" ? rec : rec.name}
                 </h4>
                 <span className="text-xs bg-blue-600 text-white px-2 py-1 rounded-full">
                   #{idx + 1}
                 </span>
               </div>
-              <p className="text-sm text-slate-700 leading-relaxed">
-                {rec.reason}
-              </p>
+              {rec.reason && (
+                <p className="text-sm text-slate-700 leading-relaxed">
+                  {rec.reason}
+                </p>
+              )}
             </div>
           ))}
         </div>
       );
     }
 
-    if (response?.error)
+    // ✅ Case 5: Error message
+    if (response?.error) {
       return (
         <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
           <span className="text-2xl">❌</span>
           <p className="text-sm text-red-700 font-medium">{response.error}</p>
         </div>
       );
+    }
 
-    if (response?.raw)
+    // ✅ Case 6: Raw AI response
+    if (response?.raw) {
       return (
-        <p className="text-slate-700 leading-relaxed">{String(response.raw)}</p>
+        <p className="text-slate-700 leading-relaxed whitespace-pre-line">
+          {typeof response.raw === "string"
+            ? response.raw
+            : JSON.stringify(response.raw, null, 2)}
+        </p>
       );
+    }
 
+    // ✅ Case 7: Fallback → Debug view
     return (
-      <pre className="text-xs bg-slate-100 p-3 rounded-lg overflow-x-auto border border-slate-200">
+      <pre className="text-xs bg-slate-100 p-3 rounded-lg overflow-x-auto border border-slate-200 text-slate-700">
         {JSON.stringify(response, null, 2)}
       </pre>
     );
@@ -369,9 +518,10 @@ export default function ChatBot({ className = "" }: { className?: string }) {
       {/* Chat window */}
       {isOpen && (
         <div
-          className={`fixed bottom-24 right-6 w-[380px] sm:w-[420px] ${
-            isMinimized ? "h-16" : "h-[600px]"
-          } bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden z-40 transition-all duration-300`}
+          className={`fixed bottom-20 sm:bottom-24 right-1/2 sm:right-6 translate-x-1/2 sm:translate-x-0 
+  w-[95%] sm:w-[380px] md:w-[420px] 
+  ${isMinimized ? "h-14" : "max-h-[80vh]"} 
+  bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden z-40 transition-all duration-300`}
         >
           {/* Header */}
           <div
@@ -466,6 +616,7 @@ export default function ChatBot({ className = "" }: { className?: string }) {
                           {message.question}
                         </p>
                       </div>
+
                       <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                         U
                       </div>
@@ -476,17 +627,17 @@ export default function ChatBot({ className = "" }: { className?: string }) {
                       <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
                         <SparklesIcon className="h-4 w-4 text-white" />
                       </div>
-                      <div className="bg-white border border-slate-200 text-slate-800 px-5 py-4 rounded-2xl rounded-bl-md max-w-[75%] shadow-lg">
+                      <div className="bg-white border border-slate-200 text-slate-800 px-5 py-4 rounded-2xl rounded-bl-md max-w-[85%] shadow-lg">
                         <div className="text-sm space-y-3">
                           {formatResponse(message.response)}
                         </div>
                         <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
                           <p className="text-xs text-slate-400 font-medium flex items-center gap-1">
                             <ClockIcon className="h-3 w-3" />
-                            {message.timestamp.toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {new Date(message.timestamp).toLocaleTimeString(
+                              [],
+                              { hour: "2-digit", minute: "2-digit" }
+                            )}
                           </p>
                           <button
                             onClick={() => toggleBookmark(message.id)}

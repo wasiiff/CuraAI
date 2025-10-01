@@ -20,7 +20,7 @@ export class GeminiService {
     }
 
     this.client = new GoogleGenerativeAI(apiKey);
-    this.model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    this.model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
   }
 
   async ask(prompt: string): Promise<string> {

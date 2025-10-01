@@ -1,19 +1,36 @@
 /* eslint-disable prettier/prettier */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { Model } from 'mongoose';
 import { GeminiService } from '../gemini/gemini.service';
 
+// Mapping symptoms to supplement categories
+const symptomMapping: Record<string, string[]> = {
+  tired: ["Vitamin B Complex", "Iron Supplements"],
+  fatigue: ["Vitamin B Complex", "Iron Supplements"],
+  weakness: ["Vitamin B Complex", "Iron Supplements"],
+  "hair fall": ["Biotin", "Zinc", "Multivitamin"],
+  "hair loss": ["Biotin", "Zinc", "Multivitamin"],
+  "weak bones": ["Calcium", "Vitamin D"],
+  stress: ["Magnesium", "Ashwagandha"],
+  sleep: ["Melatonin", "Magnesium"],
+  immunity: ["Vitamin C", "Zinc", "Echinacea"],
+  "immune support": ["Vitamin C", "Zinc", "Echinacea"],
+  digestion: ["Probiotics", "Fiber Supplements"],
+  "joint pain": ["Glucosamine", "Chondroitin", "MSM", "Collagen"],
+  "joint issues": ["Glucosamine", "Chondroitin", "MSM", "Collagen"],
+  "arthritis": ["Glucosamine", "Chondroitin", "MSM", "Collagen", "Turmeric"],
+  "knee pain": ["Glucosamine", "Collagen", "MSM"],
+  "bone pain": ["Calcium", "Vitamin D", "Collagen"]
+};
+
 @Injectable()
 export class ProductsService {
   constructor(
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
     private gemini: GeminiService,
-  ) {}
+  ) { }
 
   async createMany(items: Partial<Product>[]) {
     return this.productModel.insertMany(items);
@@ -39,15 +56,17 @@ export class ProductsService {
     return this.productModel.find(filter).limit(50).lean();
   }
 
+
   async findAll(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       this.productModel.find().skip(skip).limit(limit).lean(),
       this.productModel.countDocuments(),
     ]);
-
     return { items, total, page, limit };
   }
+
+
 
 
   async checkRelevancy(q: string): Promise<{ relevant: boolean; reason?: string }> {
@@ -75,51 +94,137 @@ export class ProductsService {
     }
   }
 
+  async symptomChecker(symptomText: string) {
+    const prompt = `
+  Analyze the following symptoms and map them to supplement categories.
+  Symptoms: "${symptomText}"
+  Return JSON in this format only:
+  {
+    "keywords": ["<keyword1>", "<keyword2>"],
+    "reasoning": "short explanation of why these nutrients help"
+  }
+  `;
+
+    const gresp = await this.gemini.ask(prompt);
+    const cleaned = gresp.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    let aiResult: { keywords: string[]; reasoning: string } = {
+      keywords: [],
+      reasoning: "Could not interpret symptoms clearly.",
+    };
+
+    try {
+      aiResult = JSON.parse(cleaned);
+    } catch (err) {
+      console.error("Symptom parsing error:", err, "Response was:", cleaned);
+    }
+
+    // ✅ Step 1: Map AI keywords & user text to known nutrients
+    const recommendations: string[] = [];
+    aiResult.keywords.forEach((kw) => {
+      Object.keys(symptomMapping).forEach((sym) => {
+        if (
+          kw.toLowerCase().includes(sym) ||
+          symptomText.toLowerCase().includes(sym)
+        ) {
+          recommendations.push(...symptomMapping[sym]);
+        }
+      });
+    });
+
+    const uniqueRecs = [...new Set(recommendations)].slice(0, 5);
+
+    // ✅ Step 2: Query DB for products containing these nutrients
+    let products: any[] = [];
+    if (uniqueRecs.length > 0) {
+      const orFilters = uniqueRecs.flatMap((nutrient) => [
+        { ingredients: { $regex: nutrient, $options: "i" } },
+        { name: { $regex: nutrient, $options: "i" } },
+        { description: { $regex: nutrient, $options: "i" } },
+      ]);
+
+      products = await this.findByFilter({ $or: orFilters });
+    }
+
+    // ✅ Step 3: Build a polished response
+    return {
+      symptoms: symptomText,
+      recommendations: uniqueRecs.length > 0 ? uniqueRecs : ["General Multivitamin"],
+      products: products.length > 0 ? products : [],
+      explanation:
+        aiResult.reasoning ||
+        (uniqueRecs.length > 0
+          ? `These supplements are commonly recommended for symptoms like "${symptomText}".`
+          : `We could not find a strong match for your symptoms, but a balanced multivitamin may help support overall wellness.`),
+      confidence: uniqueRecs.length > 0 ? "high" : "low",  // ✅ extra info for frontend
+      suggestions: products.length === 0
+        ? "No direct products found in our catalog for these nutrients. You may consult a healthcare provider for tailored advice."
+        : "These products contain nutrients linked to your symptoms.",
+    };
+  }
+
 
   async aiSearch(q: string) {
     const relevancy = await this.checkRelevancy(q);
     if (!relevancy.relevant) {
-      return { keywords: [], products: [], rawIntent: null, relevancy };
+      return { products: [], rawIntent: null, relevancy };
     }
 
+    // ✅ Fetch all products (or maybe top 100 to avoid prompt overload)
+    const allProducts = await this.findAll(1, 100);
+    const productsArray = Array.isArray(allProducts) ? allProducts : allProducts.items;
+
+    // Convert products into compact JSON for AI
+    const productSummaries = productsArray.map((p) => ({
+      _id: p._id,
+      name: p.name,
+      brand: p.brand,
+      description: p.description,
+      price: p.price,
+      ingredients: p.ingredients,
+      category: p.category,
+    }));
+
     const prompt = `
-      Pre Task Instructions:
-      Normalize the text if it has any typos or grammatical errors.
-      
-      Role:
-      You are an intent extraction engine for a healthcare product search system. 
-      
-      User query: "${q}"
-      
-      Task Context: 
-      Extract exact concise intent as comma-separated keywords (e.g., "calcium, vitamin D, joint"). like if a user entered joints Health issues then intent should be exact as supplements for joints, not for health.
-      Task: 
-       - Identify the user's exact intent and extract the most relevant keywords. 
-       - Keywords should strictly match product-related attributes such as ingredients (e.g., "calcium", "vitamin D"), health goals (e.g., "joint support", "immune boost"), or product type (e.g., "protein powder", "multivitamin"). 
-       - Do not add unrelated words or explanations. 
-       - Return keywords only, in a simple comma-separated list (no sentences, no extra text). 
-       - Only output keywords.
-       `;
+    You are a product filter engine for healthcare supplements.
 
-    const response = await this.gemini.ask(prompt);
-    const keywordsStr = response.replace(/\n/g, ' ').trim();
-    const keywords = keywordsStr
-      .split(/[,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    User query: "${q}"
 
-    const orFilters = keywords.flatMap((k) => [
-      { ingredients: { $regex: k, $options: 'i' } },
-      { category: { $regex: k, $options: 'i' } },
-      { name: { $regex: k, $options: 'i' } },
-      { description: { $regex: k, $options: 'i' } },
-    ]);
+    Here is the available product dataset (JSON array):
+    ${JSON.stringify(productSummaries, null, 2)}
 
-    const products = await this.findByFilter({ $or: orFilters });
-    return { keywords, products, rawIntent: response, relevancy };
+    Task:
+    - Select only the products relevant to the user query and symptoms, matching analysis Should Be Very Strict and Only return products that exactly match the query.
+    - Do not invent or hallucinate.
+    - Only return a JSON array of product objects exactly as in dataset.
+    - If no relevant products, return [].
+
+    Output JSON only:
+    [
+      {
+        "_id": "<id>",
+        "name": "<name>",
+        "brand": "<brand>",
+        "description": "<description>",
+        "price": "<price>"
+      }
+    ]
+  `;
+
+    const gresp = await this.gemini.ask(prompt);
+    const cleaned = gresp.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      return { products: parsed, rawIntent: q, relevancy };
+    } catch (err) {
+      console.error("AI search JSON parse error:", err);
+      return { products: [], rawIntent: gresp, relevancy };
+    }
   }
 
- 
+
+
   async chat(q: string) {
     const relevancy = await this.checkRelevancy(q);
     if (!relevancy.relevant) {
@@ -186,5 +291,9 @@ export class ProductsService {
       console.log('Failed to parse JSON:', err);
       return { raw: gresp, recommendationsText: cleaned, relevancy };
     }
+  }
+
+    async findById(id: string) {
+    return this.productModel.findById(id).lean();
   }
 }
