@@ -1,7 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { Controller, UseGuards } from '@nestjs/common';
 import { GeminiService } from './gemini.service';
-import { AuthGuard } from '@nestjs/passport/dist/auth.guard';
+import { AuthGuard } from '@nestjs/passport';
 
 @Controller('gemini')
 @UseGuards(AuthGuard('jwt'))
