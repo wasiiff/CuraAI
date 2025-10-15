@@ -94,74 +94,103 @@ export class ProductsService {
     }
   }
 
-  async symptomChecker(symptomText: string) {
-    const prompt = `
-  Analyze the following symptoms and map them to supplement categories.
-  Symptoms: "${symptomText}"
-  Return JSON in this format only:
-  {
-    "keywords": ["<keyword1>", "<keyword2>"],
-    "reasoning": "short explanation of why these nutrients help"
-  }
+async symptomChecker(symptomText: string) {
+  // 🔹 Step 1: Ask Gemini for symptom analysis
+  const prompt = `
+    Analyze these symptoms and map them to supplement categories or nutrients.
+    Symptoms: "${symptomText}"
+
+    Respond ONLY in this JSON format:
+    {
+      "keywords": ["<keyword1>", "<keyword2>"],
+      "related_terms": ["<term1>", "<term2>"],
+      "reasoning": "short explanation"
+    }
   `;
 
-    const gresp = await this.gemini.ask(prompt);
-    const cleaned = gresp.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const gresp = await this.gemini.ask(prompt);
+  const cleaned = gresp.replace(/```json/gi, '').replace(/```/g, '').trim();
 
-    let aiResult: { keywords: string[]; reasoning: string } = {
-      keywords: [],
-      reasoning: "Could not interpret symptoms clearly.",
-    };
+  let aiResult: { keywords: string[]; related_terms?: string[]; reasoning: string } = {
+    keywords: [],
+    related_terms: [],
+    reasoning: "Could not interpret symptoms clearly.",
+  };
 
-    try {
-      aiResult = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("Symptom parsing error:", err, "Response was:", cleaned);
-    }
-
-    // ✅ Step 1: Map AI keywords & user text to known nutrients
-    const recommendations: string[] = [];
-    aiResult.keywords.forEach((kw) => {
-      Object.keys(symptomMapping).forEach((sym) => {
-        if (
-          kw.toLowerCase().includes(sym) ||
-          symptomText.toLowerCase().includes(sym)
-        ) {
-          recommendations.push(...symptomMapping[sym]);
-        }
-      });
-    });
-
-    const uniqueRecs = [...new Set(recommendations)].slice(0, 5);
-
-    // ✅ Step 2: Query DB for products containing these nutrients
-    let products: any[] = [];
-    if (uniqueRecs.length > 0) {
-      const orFilters = uniqueRecs.flatMap((nutrient) => [
-        { ingredients: { $regex: nutrient, $options: "i" } },
-        { name: { $regex: nutrient, $options: "i" } },
-        { description: { $regex: nutrient, $options: "i" } },
-      ]);
-
-      products = await this.findByFilter({ $or: orFilters });
-    }
-
-    // ✅ Step 3: Build a polished response
-    return {
-      symptoms: symptomText,
-      recommendations: uniqueRecs.length > 0 ? uniqueRecs : ["General Multivitamin"],
-      products: products.length > 0 ? products : [],
-      explanation:
-        aiResult.reasoning ||
-        (uniqueRecs.length > 0
-          ? `These supplements are commonly recommended for symptoms like "${symptomText}".`
-          : `We could not find a strong match for your symptoms, but a balanced multivitamin may help support overall wellness.`),
-      confidence: uniqueRecs.length > 0 ? "high" : "low",  // ✅ extra info for frontend
-      suggestions: products.length === 0
-        ? "No direct products found in our catalog for these nutrients. You may consult a healthcare provider for tailored advice."
-        : "These products contain nutrients linked to your symptoms.",
-    };
+  try {
+    aiResult = JSON.parse(cleaned);
+  } catch (err) {
+    console.error("Symptom parsing error:", err, "Response was:", cleaned);
   }
+
+  // 🔹 Step 2: Combine AI keywords + symptom mapping
+  const normalizedInput = symptomText.toLowerCase();
+  const allKeys = new Set<string>([
+    ...aiResult.keywords.map(k => k.toLowerCase()),
+    ...(aiResult.related_terms || []).map(k => k.toLowerCase())
+  ]);
+
+  const recommendations: string[] = [];
+
+  Object.entries(symptomMapping).forEach(([sym, nutrients]) => {
+    if ([...allKeys].some(k => k.includes(sym)) || normalizedInput.includes(sym)) {
+      recommendations.push(...nutrients);
+    }
+  });
+
+  // 🔹 Step 3: AI Enrichment (optional fallback)
+  if (recommendations.length === 0 && aiResult.keywords.length > 0) {
+    recommendations.push(...aiResult.keywords);
+  }
+
+  const uniqueRecs = [...new Set(recommendations)].slice(0, 6);
+
+  // 🔹 Step 4: Query database with scoring
+  let products: any[] = [];
+  if (uniqueRecs.length > 0) {
+    const allProducts = await this.findAll(1, 100);
+    const dataset = Array.isArray(allProducts) ? allProducts : allProducts.items;
+
+    // Compute a basic relevance score
+    products = dataset
+      .map((p) => {
+        const score = uniqueRecs.reduce((acc, nutrient) => {
+          const regex = new RegExp(nutrient, "i");
+          const fields = `${p.name} ${p.description} ${p.ingredients}`;
+          return regex.test(fields) ? acc + 1 : acc;
+        }, 0);
+        return { ...p, score };
+      })
+      .filter(p => p.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+  }
+
+  // 🔹 Step 5: Confidence estimation
+  const confidence =
+    uniqueRecs.length === 0 ? "low" :
+    products.length < 2 ? "medium" : "high";
+
+  // 🔹 Step 6: Structured and clear response
+  return {
+    type: "Symptom → Supplement Recommendation",
+    symptoms: symptomText,
+    recommendations: uniqueRecs.length > 0 ? uniqueRecs : ["General Multivitamin"],
+    reasoning: aiResult.reasoning,
+    products,
+    confidence,
+    explanation:
+      aiResult.reasoning ||
+      (uniqueRecs.length
+        ? `These nutrients are commonly used to support symptoms like "${symptomText}".`
+        : `No strong nutrient link found. A balanced multivitamin may help.`),
+    suggestions:
+      products.length === 0
+        ? "No matching products in our catalog, but these nutrients may help. Consult a doctor if symptoms persist."
+        : "The listed products contain ingredients linked to your reported symptoms.",
+  };
+}
+
 
 
   async aiSearch(q: string) {
